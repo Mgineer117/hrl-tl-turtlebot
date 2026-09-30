@@ -4,6 +4,8 @@ This is the small ROS 2 / Qualisys pipeline for one physical robot. It uses the 
 
 `mocap.py` receives a QTM rigid body and publishes `/qualysis/tb3_1` (`PoseStamped`, metres, yaw in `orientation.z`, frame `mocap`). `run.py` converts that pose to the trained Zone coordinates, updates the Zone observation and yellow → white task state, runs the meta and primitive policies, converts the selected 8×5 primitive action to a world waypoint, and publishes bounded ROS velocity commands to `/cmd_vel`. It waits for a fresh measured stop before choosing another action. The native ContGrid velocity state is retained because the checkpoint was trained with that state; position and zone visits come from Qualisys.
 
+Each primitive has a **5-second slot** (`robot.motion.motion_timeout` in `configs/arena.json`). The controller turns toward the waypoint before driving forward, stops at the target, then publishes zero velocity for the rest of the slot. If it cannot reach and settle by the deadline, it stops with `motion_timeout`; it does not score an unfinished policy step. Increase this setting if the calibrated speed and turn rate make 5 seconds insufficient. The controller also clips targets and stops on measured entry into a wall buffer: `robot.bounds.margin` covers the robot footprint, and `robot.motion.wall_stop_margin` adds 0.05 m. Calibrate both for the actual wall, robot size, tracking error, and braking distance.
+
 ## Setup
 
 Use an Ubuntu 24.04 / ROS 2 Jazzy computer that can reach QTM and the Burger. Source ROS 2 and the TurtleBot3 workspace first. Use Python 3.12 with `rclpy` available. Conda is fine if its Python can import the system ROS packages.
