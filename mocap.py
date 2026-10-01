@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 
 import rclpy
 
@@ -30,9 +31,11 @@ class FreshPublisher(QualysisPublisher):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ip", required=True, help="QTM server IP address")
+    parser.add_argument("--ip", default="128.174.245.64", help="QTM server IP address")
     parser.add_argument("--marker", default="tb3_1", help="QTM rigid-body name")
     args = parser.parse_args()
+    if os.environ.get("ROS_DOMAIN_ID") != "40":
+        parser.error("Set ROS_DOMAIN_ID=40 before publishing mocap poses")
     rclpy.init(args=[])
     publisher = FreshPublisher(args.ip, args.marker)
     try:
