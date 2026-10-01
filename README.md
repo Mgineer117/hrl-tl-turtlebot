@@ -8,13 +8,13 @@ The `.zip` files are Stable-Baselines3 checkpoint archives. Each contains `polic
 
 Each primitive has a **10-second slot** (`robot.motion.motion_timeout` in `configs/arena.json`). The controller turns toward the waypoint before driving forward, stops at the target, then publishes zero velocity for the rest of the slot. If it cannot reach and settle by the deadline, it stops with `motion_timeout`; it does not score an unfinished policy step. Adjust this setting if the calibrated speed and turn rate require a different duration. The controller also clips targets and stops on measured entry into a wall buffer: `robot.bounds.margin` covers the robot footprint, and `robot.motion.wall_stop_margin` adds 0.05 m. Calibrate both for the actual wall, robot size, tracking error, and braking distance.
 
-## Lab run order (ROS domain 40)
+## Installation and lab run order (ROS domain 40)
 
 Use an Ubuntu 24.04 / ROS 2 Jazzy laptop with network access to QTM and the Burger. Clone this repo alone. Before any motion, calibrate [configs/arena.json](configs/arena.json) to the measured lab: `robot.frame`, `robot.bounds`, `robot.ros.heading_offset_rad`, motion limits, and the zone positions in both `environment.scenario_config.spawn_config` and `zones`. The supplied seed-0 layout is an example, not a measured lab calibration. This procedure assumes `192.168.0.77` is the Burger carrying the `tb3_1` marker.
 
 The requested origin correction is `robot.ros.mocap_offset_x_m: 2.1336` (**+7 ft**) and `mocap_offset_y_m: 0`. The optional `mocap_rotation_rad` is currently `0`. The state and motion controller both receive `world_xy = R(mocap_rotation_rad) × raw_QTM_xy + mocap_offset_xy`; the policy then receives `Zone_xy = robot.frame.sim_units_per_meter × R(robot.frame.rotation_rad) × (world_xy - robot.frame.origin_xy)`. `robot.frame.origin_xy` is a separate world-to-Zone offset; do not add the +7 ft there again. QTM yaw is corrected by `mocap_rotation_rad + heading_offset_rad`.
 
-### 1. Prepare the laptop (once)
+### 1. Install from a fresh clone (once)
 
 If `hrl-zone` does not exist on the Ubuntu laptop, create it first with `conda create -n hrl-zone python=3.12 -y`.
 
@@ -32,7 +32,7 @@ python run.py check
 
 Stop here unless the import check and offline policy check pass. `check` prints an observation, meta option, primitive action, and waypoint from the configured example start; it does not use live QTM. On macOS, only the offline `check` is supported; the motion run requires the Ubuntu ROS computer.
 
-`requirements.txt` installs this repo's `hrl_tl` package and its Python dependencies, plus the Qualisys SDK. Install ROS 2 Jazzy separately; `rclpy`, `geometry_msgs`, `sensor_msgs`, and `std_msgs` come from ROS and must be importable by the selected Conda Python.
+`requirements.txt` installs this repo's `hrl_tl` package via `-e .`, which also installs PyTorch (`torch`) and Stable-Baselines3 (`stable-baselines3[extra]`) from `pyproject.toml`, plus the Qualisys SDK. Install ROS 2 Jazzy separately; `rclpy`, `geometry_msgs`, `sensor_msgs`, and `std_msgs` come from ROS and must be importable by the selected Conda Python.
 
 ### 2. Start the robot driver (robot terminal)
 
