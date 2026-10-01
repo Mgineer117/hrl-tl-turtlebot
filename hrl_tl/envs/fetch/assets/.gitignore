@@ -1,0 +1,3 @@
+# Ignore dynamically generated MuJoCo model files and temp files.
+reach_avoid.xml
+*.tmp

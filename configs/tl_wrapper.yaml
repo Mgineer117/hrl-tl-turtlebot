@@ -1,0 +1,12 @@
+atomic_predicates:
+  - { "name": "psi_y", "formula": "d_y < 0.25" }
+  - { "name": "psi_r", "formula": "d_r < 0.25" }
+  - { "name": "psi_w", "formula": "d_w < 0.25" }
+  - { "name": "psi_b", "formula": "d_b < 0.25" }
+var_value_info_generator_cls: hrl_tl.envs.tl_zone.ZoneVarValueInfoGenerator
+reward_config:
+  terminal_state_reward: 0.0
+  state_trans_reward_scale: 10
+  dense_reward: true
+  goal_reward_scale: 0.01
+early_termination: true

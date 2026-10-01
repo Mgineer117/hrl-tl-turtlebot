@@ -1,6 +1,8 @@
 # Zone policy on TurtleBot3 Burger
 
-This is the small ROS 2 / Qualisys pipeline for one physical robot. Its `models/` folder contains both trained checkpoints: `best_model.zip` (primitive policy) and `final_model_8.j.b_30.0M_rep_2.zip` (meta policy). It still installs the sibling `hrl-tl-zone-sim` package for the trained Zone environment, observation logic, and TL wrappers. It contains the physical arena and an adapted Qualisys publisher from `mrs2025-main.zip`.
+This is the ROS 2 / Qualisys pipeline for one physical robot. A clone contains the `hrl_tl/` source package, the policy wrapper configuration and formulae, and both trained checkpoints in `models/`: `best_model.zip` (primitive) and `final_model_8.j.b_30.0M_rep_2.zip` (meta). It also contains the physical arena and an adapted Qualisys publisher from `mrs2025-main.zip`.
+
+The `.zip` files are Stable-Baselines3 checkpoint archives. Each contains `policy.pth` (PyTorch weights) plus saved algorithm metadata and optimizer state. Keep them zipped: `run.py` loads the meta policy with `PrimitiveStepPPO.load(...)` and the configured primitive policy with `SDSAC.load(...)`.
 
 `mocap.py` connects to QTM at `128.174.245.64` by default and publishes the `tb3_1` rigid body on `/qualysis/tb3_1` (`PoseStamped`, metres, yaw in `orientation.z`, frame `mocap`). `run.py` checks that `192.168.0.77` accepts SSH, a fresh mocap pose arrives, and `/cmd_vel` has a subscriber of the configured type. It corrects the raw QTM pose into arena-world coordinates before building the trained Zone observation, updating the yellow → white task state, running both policies, and commanding a world waypoint through `/cmd_vel`. It waits for a fresh measured stop before choosing another action. The native ContGrid velocity state is retained because the checkpoint was trained with that state; position and zone visits come from the corrected Qualisys pose.
 
@@ -8,7 +10,7 @@ Each primitive has a **10-second slot** (`robot.motion.motion_timeout` in `confi
 
 ## Lab run order (ROS domain 40)
 
-Use an Ubuntu 24.04 / ROS 2 Jazzy laptop with network access to QTM and the Burger. Keep `hrl-tl-turtlebot` and `hrl-tl-zone-sim` side by side. Before any motion, calibrate [configs/arena.json](configs/arena.json) to the measured lab: `robot.frame`, `robot.bounds`, `robot.ros.heading_offset_rad`, motion limits, and the zone positions in both `environment.scenario_config.spawn_config` and `zones`. The supplied seed-0 layout is an example, not a measured lab calibration. This procedure assumes `192.168.0.77` is the Burger carrying the `tb3_1` marker.
+Use an Ubuntu 24.04 / ROS 2 Jazzy laptop with network access to QTM and the Burger. Clone this repo alone. Before any motion, calibrate [configs/arena.json](configs/arena.json) to the measured lab: `robot.frame`, `robot.bounds`, `robot.ros.heading_offset_rad`, motion limits, and the zone positions in both `environment.scenario_config.spawn_config` and `zones`. The supplied seed-0 layout is an example, not a measured lab calibration. This procedure assumes `192.168.0.77` is the Burger carrying the `tb3_1` marker.
 
 The requested origin correction is `robot.ros.mocap_offset_x_m: 2.1336` (**+7 ft**) and `mocap_offset_y_m: 0`. The optional `mocap_rotation_rad` is currently `0`. The state and motion controller both receive `world_xy = R(mocap_rotation_rad) × raw_QTM_xy + mocap_offset_xy`; the policy then receives `Zone_xy = robot.frame.sim_units_per_meter × R(robot.frame.rotation_rad) × (world_xy - robot.frame.origin_xy)`. `robot.frame.origin_xy` is a separate world-to-Zone offset; do not add the +7 ft there again. QTM yaw is corrected by `mocap_rotation_rad + heading_offset_rad`.
 
@@ -21,13 +23,16 @@ source /opt/ros/jazzy/setup.bash
 conda activate hrl-zone
 export ROS_DOMAIN_ID=40
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
-cd /path/to/hrl-tl-turtlebot
-python -m pip install -e ../hrl-tl-zone-sim qtm-rt
-python -c 'import rclpy, qtm_rt, spot, contgrid; print("imports OK")'
+git clone https://github.com/Mgineer117/hrl-tl-turtlebot.git
+cd hrl-tl-turtlebot
+python -m pip install -r requirements.txt
+python -c 'import rclpy, geometry_msgs.msg, sensor_msgs.msg, std_msgs.msg, qtm_rt, spot, contgrid; print("imports OK")'
 python run.py check
 ```
 
-Stop here unless the import check and offline policy check pass. `check` prints an observation, meta option, primitive action, and waypoint from the configured example start; it does not use live QTM. If the simulation repo is elsewhere, pass `--sim-root=/path/to/hrl-tl-zone-sim` to `run.py`. On macOS, only the offline `check` is supported; the motion run requires the Ubuntu ROS computer.
+Stop here unless the import check and offline policy check pass. `check` prints an observation, meta option, primitive action, and waypoint from the configured example start; it does not use live QTM. On macOS, only the offline `check` is supported; the motion run requires the Ubuntu ROS computer.
+
+`requirements.txt` installs this repo's `hrl_tl` package and its Python dependencies, plus the Qualisys SDK. Install ROS 2 Jazzy separately; `rclpy`, `geometry_msgs`, `sensor_msgs`, and `std_msgs` come from ROS and must be importable by the selected Conda Python.
 
 ### 2. Start the robot driver (robot terminal)
 
@@ -85,7 +90,7 @@ python run.py run --robot-ip=192.168.0.77 --max-actions=250
 
 Press Ctrl-C or publish `std_msgs/msg/Bool` with `data: true` to `/robot_demo/stop` to stop. Each run writes `logs/<timestamp>/policy.jsonl` and `motion.jsonl` with observations, actions, targets, measured poses, and stop reasons.
 
-`ros_adapter.decode_pose` applies `mocap_to_world` once to each raw QTM pose. `PrimitiveZone.start/complete` in the sibling sim repo transforms that corrected world pose to the trained Zone coordinates and constructs the observation from the saved environment, including zone and wall distances. `RobotHierarchy.next_action` runs both checkpoints. `PrimitiveZone.plan` maps direction (0–7) and magnitude (0–4) to a short world waypoint in the same corrected world frame. The policy indices are not direct velocity commands.
+`ros_adapter.decode_pose` applies `mocap_to_world` once to each raw QTM pose. `PrimitiveZone.start/complete` in this repo's `hrl_tl/` package transforms that corrected world pose to the trained Zone coordinates and constructs the observation from the saved environment, including zone and wall distances. `RobotHierarchy.next_action` runs both checkpoints. `PrimitiveZone.plan` maps direction (0–7) and magnitude (0–4) to a short world waypoint in the same corrected world frame. The policy indices are not direct velocity commands.
 
 ## Action interpreter and modes
 
@@ -99,4 +104,4 @@ The command modes in `run.py` are: `check` (load both checkpoints and predict on
 
 ## Source notes
 
-`mrs_qualysis_publisher.py` comes from `mrs2025-main.zip`, with an atomic QTM frame update. `mocap.py` adds a freshness gate and configurable QTM address. The Zone state, waypoint conversion, and ROS feedback controller live in `hrl-tl-zone-sim` and were extracted from `hrl-tl-feat-demo`; they replace the grid-only `MultiRobotSystem`/`PIDController` because its five tile actions do not match this policy's eight directions and five magnitudes. No hardware run has been performed in this repo.
+`mrs_qualysis_publisher.py` comes from `mrs2025-main.zip`, with an atomic QTM frame update. `mocap.py` adds a freshness gate and configurable QTM address. The bundled `hrl_tl/` code was copied from `hrl-tl-zone-sim`, which extracted the Zone state, waypoint conversion, and ROS feedback controller from `hrl-tl-feat-demo`. No hardware run has been performed in this repo.

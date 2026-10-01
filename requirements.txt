@@ -1,0 +1,4 @@
+# Installs the local hrl_tl package and its Python dependencies.
+-e .
+qtm-rt==3.1.0
+# rclpy and ROS message packages come from the ROS 2 Jazzy installation.

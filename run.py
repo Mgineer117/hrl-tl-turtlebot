@@ -21,7 +21,6 @@ from hrl_tl.robot_demo.inference.learned_policy import LearnedPolicyProvider
 from hrl_tl.robot_demo.world.arena import load
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_SIM_ROOT = ROOT.parent / "hrl-tl-zone-sim"
 DEFAULT_ROBOT_IP = "192.168.0.77"
 
 
@@ -99,7 +98,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("check", "preflight", "run"))
     parser.add_argument("--arena", type=Path, default=Path("configs/arena.json"))
-    parser.add_argument("--sim-root", type=Path, default=DEFAULT_SIM_ROOT)
     parser.add_argument("--max-actions", type=int, default=250)
     parser.add_argument("--robot-ip", default=DEFAULT_ROBOT_IP)
     args = parser.parse_args()
@@ -108,10 +106,7 @@ def main() -> int:
     if args.mode in ("preflight", "run") and os.environ.get("ROS_DOMAIN_ID") != "40":
         parser.error("Set ROS_DOMAIN_ID=40 before connecting to the robot")
     arena_path = args.arena if args.arena.is_absolute() else ROOT / args.arena
-    sim_root = args.sim_root.resolve()
-    if not (sim_root / "configs/wrapper.yaml").is_file():
-        parser.error(f"Simulation repo not found: {sim_root}")
-    os.chdir(sim_root)  # Upstream wrapper and formula paths are repo relative.
+    os.chdir(ROOT)  # Wrapper and formula paths are repo relative.
 
     layout = load(arena_path)
     for filename in ("best_model.zip", "final_model_8.j.b_30.0M_rep_2.zip"):
@@ -125,7 +120,7 @@ def main() -> int:
     if args.mode == "preflight":
         return 0
     reader = TLMetaOptionWrapperConfigReader.model_validate(
-        yaml.safe_load((sim_root / "configs/wrapper.yaml").read_text())
+        yaml.safe_load((ROOT / "configs/wrapper.yaml").read_text())
     )
     reader.low_level_policy_args["model_path"] = str(ROOT / "models/best_model.zip")
     reader.max_episode_steps = layout.max_steps

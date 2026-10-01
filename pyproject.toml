@@ -1,0 +1,62 @@
+[project]
+name = "hrl-tl-turtlebot"
+version = "0.1.0"
+description = "TurtleBot3 Qualisys deployment of the Zone hierarchy"
+authors = [{ name = "Mikihisa Yuasa", email = "myuasa2@illinois.edu" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "spottl>=2.13,<3.0.0",
+    "imageio>=2.37.0,<3.0.0",
+    "matplotlib>=3.10.3,<4.0.0",
+    "tqdm>=4.67.1,<5.0.0",
+    "wandb>=0.19.11,<0.20.0",
+    "torch>=2.7.0,<3.0.0",
+    "gym-multigrid @ git+https://github.com/LIRA-illinois/gym-multigrid@feat/184-rooms",
+    "opencv-python>=4.11.0.86,<5.0.0.0",
+    "gym-tl-tools @ git+https://github.com/miki-yuasa/gym-tl-tools.git@dev",
+    "stable-baselines3[extra]>=2.6.0,<3.0.0",
+    "tensorboard>=2.19.0,<3.0.0",
+    "gymnasium[other]>=1.1.1,<2.0.0",
+    "pyyaml>=6.0.2,<7.0.0",
+    "polars>=1.32.2",
+    "rl-pipeline[optuna] @ git+https://github.com/miki-yuasa/rl-pipeline.git@dev",
+    "contgrid @ git+https://github.com/miki-yuasa/ContGrid.git",
+    "scipy>=1.16.3",
+    "sb3-contrib>=2.7.1",
+    "setuptools<82.0.0",
+    "sb3-soft @ git+https://github.com/miki-yuasa/sb3-soft.git@dev",
+    "sb3-hrl @ git+https://github.com/miki-yuasa/sb3-hrl.git@dev",
+    "absl-py>=2.5.0",
+    "immutabledict>=4.3.1",
+    "gymnasium-robotics>=1.4.2",
+    "rich>=15.0.0",
+]
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["ruff>=0.16.6", "ty>=0.0.81"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["hrl_tl"]
+
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+# torchvision = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.ruff]
+line-length = 80
