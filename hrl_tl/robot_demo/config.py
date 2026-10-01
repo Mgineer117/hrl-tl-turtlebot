@@ -59,6 +59,7 @@ class MotionConfig(Settings):
     """Motion limits in m/s, rad/s, m, rad, and seconds."""
 
     max_linear_speed: float = pydantic.Field(default=0.06, gt=0, le=0.21)
+    min_linear_speed: float = pydantic.Field(default=0.0, ge=0)
     max_angular_speed: float = pydantic.Field(default=0.6, gt=0, le=0.85)
     linear_gain: float = pydantic.Field(default=1.0, gt=0)
     angular_gain: float = pydantic.Field(default=2.0, gt=0)
@@ -78,6 +79,8 @@ class MotionConfig(Settings):
     @pydantic.model_validator(mode="after")
     def validate_hysteresis(self) -> Self:
         """Require distinct turn/drive thresholds."""
+        if self.min_linear_speed > self.max_linear_speed:
+            raise ValueError("min_linear_speed must not exceed max_linear_speed")
         if self.heading_tolerance >= self.reorient_threshold:
             raise ValueError("heading_tolerance must be < reorient_threshold")
         if self.wall_stop_margin < self.max_linear_speed * self.pose_timeout:
@@ -96,6 +99,8 @@ class RosConfig(Settings):
     heading_offset_rad: float = 0.0
     mocap_offset_x_m: float = 0.0
     mocap_offset_y_m: float = 0.0
+    marker_offset_x_m: float = 0.0
+    marker_offset_y_m: float = 0.0
     mocap_rotation_rad: float = 0.0
     cmd_vel_topic: str = "/robot_demo/cmd_vel"
     cmd_vel_type: Literal["twist", "twist_stamped"] = "twist"
@@ -142,9 +147,9 @@ class DemoConfig(Settings):
         if any(a >= b for a, b in itertools.pairwise(distances)):
             raise ValueError("step_lengths_sim must be strictly increasing")
         if distances[0] / self.frame.sim_units_per_meter <= (
-            2 * self.motion.position_tolerance
+            self.motion.position_tolerance
         ):
-            raise ValueError("Shortest step must exceed twice the tolerance")
+            raise ValueError("Shortest step must exceed the tolerance")
         if any(not (0 <= d < 8 and 0 <= m < 5) for d, m in self.actions):
             raise ValueError(
                 "Actions must contain direction 0..7, strength 0..4"

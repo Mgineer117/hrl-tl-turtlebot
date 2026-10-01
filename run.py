@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import os
 import socket
 import time
@@ -16,12 +17,49 @@ from sb3_hrl.option.policies.primitive_step_ppo import PrimitiveStepPPO
 
 from hrl_tl.config.meta_option import TLMetaOptionWrapperConfigReader
 from hrl_tl.robot_demo import pose
+from hrl_tl.robot_demo.control import action
 from hrl_tl.robot_demo.inference.hierarchy import RobotHierarchy
 from hrl_tl.robot_demo.inference.learned_policy import LearnedPolicyProvider
-from hrl_tl.robot_demo.world.arena import load
+from hrl_tl.robot_demo.inference.manual import SingleActionProvider
+from hrl_tl.robot_demo.world.arena import Arena, load
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_ROBOT_IP = "192.168.0.77"
+
+
+def interpret_manual_action(
+    layout: Arena, angle_deg: float, distance_m: float
+) -> tuple[action.MovementAction, float, float]:
+    """Map one supported Zone-frame angle and stride to discrete action bins."""
+    if not math.isfinite(angle_deg) or not math.isfinite(distance_m):
+        raise ValueError("angle and distance must be finite numbers")
+    direction = angle_deg % 360.0
+    direction_index = round(direction / 45.0) % 8
+    interpreted_angle = direction_index * 45.0
+    angle_error = abs((direction - interpreted_angle + 180.0) % 360.0 - 180.0)
+    if angle_error > 1e-6:
+        raise ValueError("angle must be a multiple of 45 degrees")
+    available_steps = [
+        value / layout.robot.frame.sim_units_per_meter
+        for value in layout.robot.step_lengths_sim
+    ]
+    magnitude_index = min(
+        range(len(available_steps)),
+        key=lambda index: abs(available_steps[index] - distance_m),
+    )
+    if abs(available_steps[magnitude_index] - distance_m) > 0.001:
+        choices = ", ".join(f"{step:.5f}" for step in available_steps)
+        raise ValueError(
+            f"distance must match a configured step within 1 mm; available: {choices}"
+        )
+    return (
+        action.MovementAction(
+            direction_index=direction_index,
+            magnitude_index=magnitude_index,
+        ),
+        interpreted_angle,
+        available_steps[magnitude_index],
+    )
 
 
 def preflight(robot_ip: str, layout) -> None:
@@ -49,6 +87,7 @@ def preflight(robot_ip: str, layout) -> None:
     )
     try:
         deadline = time.monotonic() + 10.0
+        topics = dict(node.get_topic_names_and_types())
         expected = (
             "geometry_msgs/msg/Twist" if cmd_type == "twist"
             else "geometry_msgs/msg/TwistStamped"
@@ -83,10 +122,31 @@ def preflight(robot_ip: str, layout) -> None:
                     f"Zone: ({zone.x:.3f}, {zone.y:.3f})"
                 )
                 return
+        pose_types = topics.get(pose_topic, [])
+        cmd_types = topics.get(cmd_topic, [])
+        pose_publishers = node.count_publishers(pose_topic)
+        cmd_subscribers = node.count_subscribers(cmd_topic)
+        problems = []
+        if "geometry_msgs/msg/PoseStamped" not in pose_types:
+            problems.append(
+                f"{pose_topic} type missing (observed {pose_types or 'no topic'})"
+            )
+        elif not received:
+            problems.append(
+                f"no PoseStamped message arrived on {pose_topic} during the 10 s wait"
+            )
+        if expected not in cmd_types:
+            problems.append(
+                f"{cmd_topic} type must be {expected} (observed {cmd_types or 'no topic'})"
+            )
+        elif cmd_subscribers == 0:
+            problems.append(f"{cmd_topic} has no subscribers")
         raise RuntimeError(
-            f"ROS preflight failed: {pose_topic} must publish PoseStamped, "
-            f"and {cmd_topic} must have a {expected} subscriber. "
-            f"Visible topics: {topics}"
+            "ROS preflight failed: "
+            + "; ".join(problems)
+            + f". Diagnostics: pose publishers={pose_publishers}, "
+            f"pose messages received={len(received)}, "
+            f"{cmd_topic} subscribers={cmd_subscribers}, visible topics={topics}"
         )
     finally:
         node.destroy_subscription(subscription)
@@ -96,29 +156,87 @@ def preflight(robot_ip: str, layout) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("check", "preflight", "run"))
+    parser.add_argument("mode", choices=("check", "preflight", "move", "run"))
     parser.add_argument("--arena", type=Path, default=Path("configs/arena.json"))
     parser.add_argument("--max-actions", type=int, default=250)
     parser.add_argument("--robot-ip", default=DEFAULT_ROBOT_IP)
+    parser.add_argument(
+        "--angle-deg",
+        type=float,
+        help="one Zone-frame direction (0, 45, ..., 315 degrees) for move mode",
+    )
+    parser.add_argument(
+        "--distance-m",
+        type=float,
+        help="one configured primitive step distance in metres for move mode",
+    )
     args = parser.parse_args()
     if args.max_actions < 1:
         parser.error("--max-actions must be positive")
-    if args.mode in ("preflight", "run") and os.environ.get("ROS_DOMAIN_ID") != "40":
+    if args.mode == "move":
+        if args.angle_deg is None or args.distance_m is None:
+            parser.error("move mode requires both --angle-deg and --distance-m")
+        if not math.isfinite(args.angle_deg) or not math.isfinite(args.distance_m):
+            parser.error("move angle and distance must be finite numbers")
+    elif args.angle_deg is not None or args.distance_m is not None:
+        parser.error("--angle-deg and --distance-m are only valid in move mode")
+    if args.mode in ("preflight", "move", "run") and os.environ.get("ROS_DOMAIN_ID") != "40":
         parser.error("Set ROS_DOMAIN_ID=40 before connecting to the robot")
     arena_path = args.arena if args.arena.is_absolute() else ROOT / args.arena
     os.chdir(ROOT)  # Wrapper and formula paths are repo relative.
 
     layout = load(arena_path)
-    for filename in ("best_model.zip", "final_model_8.j.b_30.0M_rep_2.zip"):
-        if not (ROOT / "models" / filename).is_file():
-            parser.error(f"Missing robot policy checkpoint: {ROOT / 'models' / filename}")
-    if args.mode in ("preflight", "run"):
+    manual_movement = None
+    manual_metadata = None
+    if args.mode == "move":
+        try:
+            manual_movement, interpreted_angle, actual_distance = (
+                interpret_manual_action(layout, args.angle_deg, args.distance_m)
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        manual_metadata = {
+            "event": "manual_action",
+            "zone_direction_deg": interpreted_angle,
+            "requested_distance_m": args.distance_m,
+            "interpreted_distance_m": actual_distance,
+            "movement": manual_movement.model_dump(),
+        }
+    if args.mode in ("check", "run"):
+        for filename in ("best_model.zip", "final_model_8.j.b_30.0M_rep_2.zip"):
+            if not (ROOT / "models" / filename).is_file():
+                parser.error(f"Missing robot policy checkpoint: {ROOT / 'models' / filename}")
+    if args.mode in ("preflight", "move", "run"):
         try:
             preflight(args.robot_ip, layout)
         except RuntimeError as error:
             parser.error(str(error))
     if args.mode == "preflight":
         return 0
+
+    if args.mode == "move":
+        assert manual_movement is not None and manual_metadata is not None
+        log_dir = ROOT / "logs" / str(time.time_ns())
+        log_dir.mkdir(parents=True)
+        (log_dir / "manual_action.json").write_text(
+            json.dumps(manual_metadata, indent=2, allow_nan=False) + "\n"
+        )
+        provider = SingleActionProvider(
+            manual_movement,
+            angle_deg=manual_metadata["zone_direction_deg"],
+            distance_m=manual_metadata["interpreted_distance_m"],
+        )
+        print(
+            f"One action: Zone direction {manual_metadata['zone_direction_deg']:g} deg, "
+            f"step {manual_metadata['interpreted_distance_m']:.5f} m "
+            f"(direction_index={manual_movement.direction_index}, "
+            f"magnitude_index={manual_movement.magnitude_index})"
+        )
+        print(f"Run data: {log_dir}")
+        from hrl_tl.robot_demo.control.ros_adapter import run as ros_run
+
+        return ros_run(layout.robot, provider, log_dir / "motion.jsonl")
+
     reader = TLMetaOptionWrapperConfigReader.model_validate(
         yaml.safe_load((ROOT / "configs/wrapper.yaml").read_text())
     )
@@ -166,6 +284,7 @@ def main() -> int:
             max_actions=args.max_actions, require_arena=False,
         )
         try:
+            print(f"Policy log: {log_dir / 'policy.jsonl'}")
             print(f"Motion log: {log_dir / 'motion.jsonl'}")
             return run(layout.robot, provider, log_dir / "motion.jsonl")
         finally:

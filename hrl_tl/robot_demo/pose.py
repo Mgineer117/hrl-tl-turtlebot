@@ -47,13 +47,17 @@ def quaternion_yaw(x: float, y: float, z: float, w: float) -> float:
 
 
 def mocap_to_world(measured: Pose2D, settings: config.RosConfig) -> Pose2D:
-    """Map a raw QTM pose into the arena world frame used by control and Zone."""
+    """Map the QTM marker to the robot reference point in arena world metres."""
     x, y = measured.x, measured.y
     c, s = math.cos(settings.mocap_rotation_rad), math.sin(settings.mocap_rotation_rad)
+    yaw = measured.yaw + settings.mocap_rotation_rad + settings.heading_offset_rad
+    cy, sy = math.cos(yaw), math.sin(yaw)
     return Pose2D(
-        x=c * x - s * y + settings.mocap_offset_x_m,
-        y=s * x + c * y + settings.mocap_offset_y_m,
-        yaw=measured.yaw + settings.mocap_rotation_rad + settings.heading_offset_rad,
+        x=c * x - s * y + settings.mocap_offset_x_m
+        - cy * settings.marker_offset_x_m + sy * settings.marker_offset_y_m,
+        y=s * x + c * y + settings.mocap_offset_y_m
+        - sy * settings.marker_offset_x_m - cy * settings.marker_offset_y_m,
+        yaw=yaw,
         stamp=measured.stamp,
         received_at=measured.received_at,
     )

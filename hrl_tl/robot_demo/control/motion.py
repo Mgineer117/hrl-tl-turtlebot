@@ -216,7 +216,7 @@ class MotionExecutor:
         return Velocity(
             linear=min(
                 self._config.max_linear_speed,
-                self._config.linear_gain * distance,
+                max(self._config.min_linear_speed, self._config.linear_gain * distance),
             ),
             angular=self._angular_speed(angle),
         )
