@@ -28,26 +28,6 @@ class Pose2D(Point2D):
     received_at: float
 
 
-class FirstPoseAlignment:
-    """Keep the first corrected mocap position at the configured world start."""
-
-    def __init__(self, start: Point2D) -> None:
-        self.start = start
-        self.first_pose: Pose2D | None = None
-        self.offset: Point2D | None = None
-
-    def apply(self, measured: Pose2D) -> Pose2D:
-        if self.offset is None:
-            self.first_pose = measured
-            self.offset = Point2D(
-                x=self.start.x - measured.x, y=self.start.y - measured.y
-            )
-        return measured.model_copy(update={
-            "x": measured.x + self.offset.x,
-            "y": measured.y + self.offset.y,
-        })
-
-
 def angle_difference(target: float, current: float) -> float:
     """Return the signed shortest angular displacement in radians."""
     return math.atan2(math.sin(target - current), math.cos(target - current))

@@ -60,6 +60,8 @@ def simulate(
     wrapper_kwargs: dict,
     start: pose.Pose2D,
     max_actions: int,
+    *,
+    continuous: bool = False,
 ) -> dict:
     """Run model waypoints through the repository controller and ideal motion."""
     motion_controller = motion.MotionExecutor(
@@ -71,7 +73,8 @@ def simulate(
     import io
 
     hierarchy = RobotHierarchy(
-        layout, upper, wrapper_kwargs, io.StringIO(), max_actions
+        layout, upper, wrapper_kwargs, io.StringIO(), max_actions,
+        continuous=continuous,
     )
     sample_every = max(1, round(layout.robot.ros.control_hz / 10))
     trajectory = [pose.Point2D(x=start.x, y=start.y)]
@@ -102,7 +105,9 @@ def simulate(
                     )
                 result = motion_controller.take_result()
                 if result is not None:
-                    if result.outcome != "target_reached":
+                    if result.outcome != "target_reached" and not (
+                        continuous and result.reason in ("motion_timeout", "pose_timeout")
+                    ):
                         reason = f"motion_{result.outcome}:{result.reason}"
                     break
                 if motion_controller.state in (motion.State.FAULT, motion.State.STOPPED):
@@ -130,6 +135,9 @@ def simulate(
                 }
             )
             if reason:
+                break
+            if continuous and command_id >= max_actions:
+                reason = "action_limit"
                 break
             command = hierarchy.next_action(current)
             if command is None:

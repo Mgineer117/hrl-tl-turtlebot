@@ -102,7 +102,6 @@ class RosConfig(Settings):
     marker_offset_x_m: float = 0.0
     marker_offset_y_m: float = 0.0
     mocap_rotation_rad: float = 0.0
-    align_first_pose_to_start: bool = False
     cmd_vel_topic: str = "/robot_demo/cmd_vel"
     cmd_vel_type: Literal["twist", "twist_stamped"] = "twist"
     stop_topic: str = "/robot_demo/stop"

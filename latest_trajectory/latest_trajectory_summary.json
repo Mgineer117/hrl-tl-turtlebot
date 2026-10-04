@@ -1,0 +1,21 @@
+{
+  "run_id": "1791142770329363539",
+  "measured_commands": 193,
+  "measured_samples": 8229,
+  "stop_reason": "interrupted",
+  "open_loop_actions": 193,
+  "open_loop_reason": "action_limit",
+  "start_world_m": {
+    "x": -0.9175098012576534,
+    "y": -1.008049923545249,
+    "yaw": -0.1352830409167325
+  },
+  "measured_end_world_m": {
+    "x": -0.1268074674946695,
+    "y": 1.20779811735298
+  },
+  "open_loop_end_world_m": {
+    "x": -0.002504849498717656,
+    "y": 0.9889073250203777
+  }
+}

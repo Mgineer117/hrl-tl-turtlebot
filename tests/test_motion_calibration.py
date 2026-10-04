@@ -40,18 +40,6 @@ class MotionCalibrationTest(unittest.TestCase):
         self.assertTrue(demo.finished)
         self.assertEqual(demo.reason, "wall_clearance")
 
-    def test_first_pose_alignment_keeps_one_fixed_translation(self):
-        alignment = pose.FirstPoseAlignment(pose.Point2D(x=-1.0, y=2.0))
-        first = pose.Pose2D(x=3.0, y=4.0, yaw=0.2, stamp=1, received_at=1)
-        second = pose.Pose2D(x=3.1, y=4.2, yaw=0.3, stamp=2, received_at=2)
-        aligned_first = alignment.apply(first)
-        aligned_second = alignment.apply(second)
-        self.assertEqual((aligned_first.x, aligned_first.y), (-1.0, 2.0))
-        self.assertAlmostEqual(aligned_second.x, -0.9)
-        self.assertAlmostEqual(aligned_second.y, 2.2)
-        self.assertEqual(aligned_second.yaw, second.yaw)
-        self.assertEqual(alignment.first_pose, first)
-
     def test_marker_offset_uses_corrected_heading(self):
         settings = config.RosConfig(
             heading_offset_rad=math.pi / 2,
