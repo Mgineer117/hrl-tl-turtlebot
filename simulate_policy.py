@@ -151,19 +151,25 @@ def simulate(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--arena", type=pathlib.Path, default=ROOT / "configs/arena.json")
+    parser.add_argument(
+        "--arena", type=pathlib.Path,
+        default=ROOT / "configs/robot_demo/arenas/seed_383.json",
+    )
     parser.add_argument("--raw-x", type=float, default=-2.5447392578125)
     parser.add_argument("--raw-y", type=float, default=0.023682369)
     parser.add_argument("--yaw", type=float, default=-1.53085881)
-    parser.add_argument("--arena-start", action="store_true",
-                        help="start at the arena's fixed spawn with world yaw 0")
+    start_mode = parser.add_mutually_exclusive_group()
+    start_mode.add_argument("--arena-start", dest="arena_start", action="store_true",
+                            default=True, help="start at the fixed spawn with world yaw 0 (default)")
+    start_mode.add_argument("--qtm-start", dest="arena_start", action="store_false",
+                            help="start from --raw-x, --raw-y, and --yaw")
     parser.add_argument("--seed", type=int, default=None,
                         help="policy RNG seed (defaults to the arena seed)")
     parser.add_argument("--max-actions", type=int, default=250)
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=ROOT / "artifacts/policy_trajectory.png",
+        default=ROOT / "artifacts/fixed_seed/seed_383_trajectory.png",
     )
     args = parser.parse_args()
     if args.max_actions < 1:
