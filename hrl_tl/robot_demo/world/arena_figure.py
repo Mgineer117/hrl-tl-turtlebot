@@ -11,8 +11,15 @@ from hrl_tl.robot_demo import pose
 from hrl_tl.robot_demo.world import arena, gazebo_layout
 
 
-def save(layout: arena.Arena, destination: pathlib.Path) -> None:
-    """Save an English annotated PNG or SVG without running a policy."""
+def save(
+    layout: arena.Arena,
+    destination: pathlib.Path,
+    *,
+    trajectory: list[pose.Point2D] | None = None,
+    summary: dict | None = None,
+    overwrite: bool = False,
+) -> None:
+    """Save an annotated arena, optionally with a simulated trajectory."""
     frame = layout.robot.frame
     scale = frame.sim_units_per_meter
     bounds = layout.robot.bounds
@@ -22,7 +29,9 @@ def save(layout: arena.Arena, destination: pathlib.Path) -> None:
         figure = pyplot.figure(figsize=(12, 7.6), facecolor="#f5f7fa")
         try:
             figure.text(
-                0.055, 0.94, "Zone / Gazebo layout", size=22, weight="bold"
+                0.055, 0.94,
+                "Offline simulated trajectory" if trajectory else "Zone / Gazebo layout",
+                size=22, weight="bold",
             )
             figure.text(
                 0.055,
@@ -65,6 +74,16 @@ def save(layout: arena.Arena, destination: pathlib.Path) -> None:
                     )
                 )
             start = pose.zone_to_world(layout.start, frame)
+            if trajectory:
+                axes.plot(
+                    [point.x for point in trajectory],
+                    [point.y for point in trajectory],
+                    color="#0072b2", linewidth=1.5, zorder=3,
+                )
+                axes.plot(
+                    trajectory[-1].x, trajectory[-1].y,
+                    marker="x", color="#0072b2", markersize=9, zorder=5,
+                )
             axes.add_patch(
                 patches.Circle(
                     (start.x, start.y),
@@ -75,7 +94,7 @@ def save(layout: arena.Arena, destination: pathlib.Path) -> None:
                 )
             )
             axes.annotate(
-                "Example start position",
+                "Start position" if trajectory else "Example start position",
                 (start.x, start.y),
                 xytext=(0, 15),
                 textcoords="offset points",
@@ -153,19 +172,24 @@ def save(layout: arena.Arena, destination: pathlib.Path) -> None:
             figure.text(
                 0.65,
                 0.095,
+                "Ideal-motion model; not a Gazebo or robot run."
+                if trajectory else
                 "Evaluation: compare the meta-policy's selected spec\n"
                 "with the robot's measured trajectory.",
                 size=11,
             )
+            caption = (
+                f"{summary['actions']} actions, {summary['reason']}"
+                if summary else "Layout diagram (not a run result)"
+            )
             figure.text(
                 0.055,
                 0.035,
-                f"Layout diagram (not a run result)  |  seed={layout.seed}  |  "
-                f"arena={layout.identity[:12]}",
+                f"{caption}  |  seed={layout.seed}  |  arena={layout.identity[:12]}",
                 size=9,
                 color="#657286",
             )
-            with destination.open("xb") as stream:
+            with destination.open("wb" if overwrite else "xb") as stream:
                 figure.savefig(stream, format=destination.suffix[1:], dpi=160)
         finally:
             pyplot.close(figure)

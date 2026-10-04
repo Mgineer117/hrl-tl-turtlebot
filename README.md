@@ -104,6 +104,17 @@ For example, `[2, 4]` requests direction 90° and a `0.21` Zone-unit step, which
 
 The command modes in `run.py` are: `check` (load both checkpoints and predict once from the configured start, without ROS or motion), `preflight` (verify SSH reachability, a live mocap pose, and a `/cmd_vel` subscriber, without motion), `move` (preflight and execute one manually selected discrete action), and `run` (repeat policy inference and robot movement until the task or action limit ends).
 
+## Fixed-seed offline trajectories
+
+The [seed 383](configs/robot_demo/arenas/seed_383.json) and [seed 295](configs/robot_demo/arenas/seed_295.json) arenas reproduce the positions and controller settings stated in the supplied fixed-seed guide. The original saved JSON files were not supplied, so unspecified fields retain this repo's settings. These files use a zero Mocap transform for simulation; keep the separately calibrated `configs/arena.json` for physical experiments.
+
+```bash
+python simulate_policy.py --arena configs/robot_demo/arenas/seed_383.json --arena-start --max-actions 250 --output artifacts/fixed_seed/seed_383_trajectory.png
+python simulate_policy.py --arena configs/robot_demo/arenas/seed_295.json --arena-start --max-actions 250 --output artifacts/fixed_seed/seed_295_trajectory.png
+```
+
+Both offline ideal-motion rollouts reached `task_success`: [seed 383 plot](artifacts/fixed_seed/seed_383_trajectory.png) in 140 actions and [seed 295 plot](artifacts/fixed_seed/seed_295_trajectory.png) in 135 actions. Their adjacent `.json` files contain the sampled paths and action results. These are not the guide's Gazebo runs.
+
 ## Source notes
 
 `mrs_qualysis_publisher.py` comes from `mrs2025-main.zip`, with an atomic QTM frame update. `mocap.py` adds a freshness gate and configurable QTM address. The bundled `hrl_tl/` code was copied from `hrl-tl-zone-sim`, which extracted the Zone state, waypoint conversion, and ROS feedback controller from `hrl-tl-feat-demo`. No hardware run has been performed in this repo.

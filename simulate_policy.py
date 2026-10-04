@@ -7,7 +7,9 @@ import json
 import math
 import os
 import pathlib
+import random
 
+import numpy as np
 import torch
 import yaml
 from sb3_hrl.option.policies.primitive_step_ppo import PrimitiveStepPPO
@@ -153,6 +155,10 @@ def main() -> int:
     parser.add_argument("--raw-x", type=float, default=-2.5447392578125)
     parser.add_argument("--raw-y", type=float, default=0.023682369)
     parser.add_argument("--yaw", type=float, default=-1.53085881)
+    parser.add_argument("--arena-start", action="store_true",
+                        help="start at the arena's fixed spawn with world yaw 0")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="policy RNG seed (defaults to the arena seed)")
     parser.add_argument("--max-actions", type=int, default=250)
     parser.add_argument(
         "--output",
@@ -168,14 +174,20 @@ def main() -> int:
         if not (ROOT / "models" / filename).is_file():
             parser.error(f"Missing policy checkpoint: {ROOT / 'models' / filename}")
 
-    raw_start = pose.Pose2D(
-        x=args.raw_x,
-        y=args.raw_y,
-        yaw=args.yaw,
-        stamp=0.0,
-        received_at=0.0,
-    )
-    start = pose.mocap_to_world(raw_start, layout.robot.ros)
+    if args.arena_start:
+        point = pose.zone_to_world(layout.start, layout.robot.frame)
+        start = pose.Pose2D(
+            x=point.x, y=point.y, yaw=0.0, stamp=0.0, received_at=0.0
+        )
+    else:
+        raw_start = pose.Pose2D(
+            x=args.raw_x,
+            y=args.raw_y,
+            yaw=args.yaw,
+            stamp=0.0,
+            received_at=0.0,
+        )
+        start = pose.mocap_to_world(raw_start, layout.robot.ros)
     if not layout.robot.bounds.contains(
         start.x, start.y, layout.robot.motion.wall_stop_margin
     ):
@@ -191,6 +203,10 @@ def main() -> int:
     upper = PrimitiveStepPPO.load(
         ROOT / "models/final_model_8.j.b_30.0M_rep_2.zip", device="cpu"
     )
+    seed = layout.seed if args.seed is None else args.seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     result = simulate(layout, upper, wrapper.wrapper_kwargs, start, args.max_actions)
 
     output = args.output if args.output.is_absolute() else ROOT / args.output
@@ -209,17 +225,22 @@ def main() -> int:
         layout, output, trajectory=sampled, summary=summary, overwrite=True
     )
     result["source_qtm_pose"] = {
-        "raw_x_m": args.raw_x,
-        "raw_y_m": args.raw_y,
-        "yaw_rad": args.yaw,
+        "source": "arena_start" if args.arena_start else "raw_qtm",
+        "raw_x_m": None if args.arena_start else args.raw_x,
+        "raw_y_m": None if args.arena_start else args.raw_y,
+        "yaw_rad": 0.0 if args.arena_start else args.yaw,
         "corrected_zone_position": {"x": start_zone.x, "y": start_zone.y},
         "final_zone_position": {"x": end_zone.x, "y": end_zone.y},
     }
     result["arena_identity"] = layout.identity
+    result["random_seed"] = seed
     result["image"] = str(output)
     trace_path = output.with_suffix(".json")
     trace_path.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
-    print(f"First QTM sample raw: ({args.raw_x:.6f}, {args.raw_y:.6f}) m, yaw={args.yaw:.6f} rad")
+    if args.arena_start:
+        print(f"Arena start; yaw=0 rad; random seed={seed}")
+    else:
+        print(f"First QTM sample raw: ({args.raw_x:.6f}, {args.raw_y:.6f}) m, yaw={args.yaw:.6f} rad")
     print(f"Corrected world: ({start.x:.6f}, {start.y:.6f}) m; Zone: ({start_zone.x:.3f}, {start_zone.y:.3f})")
     print(f"Rollout: {result['reason']}; actions: {len(result['actions'])}")
     print(f"Final world: ({end['x']:.6f}, {end['y']:.6f}) m; Zone: ({end_zone.x:.3f}, {end_zone.y:.3f})")
