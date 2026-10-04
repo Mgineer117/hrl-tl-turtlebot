@@ -89,7 +89,13 @@ class DemoRuntime:
         if measured is None or now - measured.received_at > (
             self._config.motion.pose_timeout
         ):
-            self.stop(now, "pose_timeout", fault=True)
+            if measured is not None:
+                self._after_stamp = measured.stamp
+            self._events.append({
+                "event": "action_deferred",
+                "reason": "pose_timeout; waiting for a fresh pose",
+                "time": now,
+            })
             return False
         target = (
             action.target_from_action(command, measured, self._config)
@@ -144,6 +150,7 @@ class DemoRuntime:
             and result is None
             and measured is not None
             and measured.stamp > self._after_stamp
+            and now - measured.received_at <= self._config.motion.pose_timeout
         ):
             self._request = ActionRequest(
                 command_id=self._next_id, pose=measured, requested_at=now

@@ -32,11 +32,16 @@ class RobotHierarchy:
         wrapper_kwargs: dict[str, Any],
         log: TextIO,
         max_actions: int | None,
+        *,
+        continuous: bool = False,
     ) -> None:
         if max_actions is not None and max_actions <= 0:
             raise ValueError("max_actions must be positive")
         self._layout: arena.Arena = layout
         self._upper: base_class.BaseAlgorithm = upper
+        self._wrapper_kwargs = wrapper_kwargs
+        self._continuous = continuous
+        self._episode_index = 0
         self._zone: primitive.PrimitiveZone = primitive.PrimitiveZone(layout)
         self._meta: tl_meta_option.TLMetaOptionWrapper = (
             tl_meta_option.TLMetaOptionWrapper(self._zone.env, **wrapper_kwargs)
@@ -83,20 +88,24 @@ class RobotHierarchy:
             return None
         transition = None
         if not self._started:
-            self._zone.start(measured)
+            self._zone.start(measured, evaluate=not self._continuous)
             self._started = True
         else:
             transition = self._zone.complete(measured)
-        if self._zone.reason:
-            self.reason = self._zone.reason
+        if self._zone.reason or self._zone.steps >= self._layout.max_steps:
+            self.reason = self._zone.reason or "episode_limit"
             if self._execution is not None and transition is not None:
                 try:
                     self._execution.send(transition)
                 except StopIteration:
                     self._execution = None
+            if self._continuous:
+                self._restart_episode(measured)
+                transition = None
         if (
             self._manual_limit is not None
             and self._issued >= self._manual_limit
+            and not self._continuous
             and not self.reason
         ):
             self.reason = "episode_limit"
@@ -104,12 +113,16 @@ class RobotHierarchy:
             self.close_option()
             return None
         selected = self._resume(transition)
+        if selected is None and self._continuous and self.reason:
+            self._restart_episode(measured)
+            selected = self._resume(None)
         if selected is None:
             return None
         command = self._zone.plan(np.asarray(selected))
         self._issued += 1
         self.decision = {
             "decision": self._issued,
+            "episode": self._episode_index,
             "upper_action": self._upper_action.tolist(),
             "spec": self._option["spec"],
             "option": dict(self._option),
@@ -150,6 +163,32 @@ class RobotHierarchy:
         """Release the option and native environment."""
         self.close_option()
         self._zone.close()
+
+    def _restart_episode(self, measured: pose.Pose2D) -> None:
+        """Restart task state at the latest measured robot pose."""
+        previous_reason = self.reason
+        self.close_option()
+        self._zone.close()
+        self._episode_index += 1
+        seed = self._layout.seed + self._episode_index
+        self._zone = primitive.PrimitiveZone(self._layout)
+        self._meta = tl_meta_option.TLMetaOptionWrapper(
+            self._zone.env, **self._wrapper_kwargs
+        )
+        self._meta.reset(seed=seed)
+        self._zone.env.action_space.seed(seed)
+        self._zone.start(measured, evaluate=False)
+        self._started = True
+        self._issued = 0
+        self._option = {"id": 0, "spec": None}
+        self.reason = ""
+        self._log.write(json.dumps({
+            "event": "episode_restart",
+            "episode": self._episode_index,
+            "reason": previous_reason,
+            "pose": measured.model_dump(),
+        }, allow_nan=False) + "\n")
+        self._log.flush()
 
     def _resume(
         self, transition: tl_meta_option.StepResult | None

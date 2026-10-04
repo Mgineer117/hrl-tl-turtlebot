@@ -175,7 +175,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("check", "preflight", "move", "run"))
     parser.add_argument("--arena", type=Path, default=Path("configs/arena.json"))
-    parser.add_argument("--max-actions", type=int, default=250)
+    parser.add_argument(
+        "--max-actions", type=int, default=250,
+        help="accepted for compatibility; run mode continues until stopped",
+    )
     parser.add_argument("--robot-ip", default=DEFAULT_ROBOT_IP)
     parser.add_argument(
         "--angle-deg",
@@ -302,7 +305,7 @@ def main() -> int:
     with (log_dir / "policy.jsonl").open("x") as policy_log:
         provider = LearnedPolicyProvider(
             layout, upper, wrapper.wrapper_kwargs, policy_log,
-            max_actions=args.max_actions, require_arena=False,
+            max_actions=args.max_actions, continuous=True, require_arena=False,
         )
         try:
             print(f"Policy log: {log_dir / 'policy.jsonl'}")

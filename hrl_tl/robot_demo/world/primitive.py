@@ -42,12 +42,20 @@ class PrimitiveZone:
         self._action: np.ndarray | None = None
         self._stamp: float = float("-inf")
 
-    def start(self, measured: pose.Pose2D) -> None:
+    def start(self, measured: pose.Pose2D, *, evaluate: bool = True) -> None:
         """Initialize the position from mocap, with the native reset velocity."""
         self._set_position(measured)
         agent = self.env.env.world.agents[0]
         agent.state.vel = np.zeros(2, dtype=np.float64)
-        self._evaluate()
+        if evaluate:
+            self._evaluate()
+        else:
+            self.observation = self.env.scenario.observation(
+                agent, self.env.env.world
+            )
+            self.info = self.env.scenario.info(agent, self.env.env.world)
+            if not self.env.observation_space.contains(self.observation):
+                raise ValueError("Measured state is outside the native Zone space")
 
     def plan(self, selected: np.ndarray) -> action.NativeMovementAction:
         """Translate a discrete direction and magnitude to a world waypoint.

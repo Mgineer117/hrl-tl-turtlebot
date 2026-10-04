@@ -275,19 +275,6 @@ class RobotNode(node.Node):
         if feedback.reason:
             self._runtime.stop(now, feedback.reason, fault=feedback.fault)
             return
-        if (
-            feedback.observed_at is not None
-            and now - feedback.observed_at > self._config.motion.pose_timeout
-            and self._runtime.state
-            in (
-                motion.State.ROTATING,
-                motion.State.REPOSITIONING,
-                motion.State.MOVING,
-                motion.State.SETTLING,
-            )
-        ):
-            self._runtime.stop(now, "observation_timeout", fault=True)
-            return
         if self._future is not None and self._future.done():
             completed, self._future = self._future, None
             try:
@@ -343,7 +330,7 @@ def run(
         gazebo_image_topic: Camera topic subscribed to while recording.
 
     Returns:
-        Zero for an expected episode ending; one for a fault or interruption.
+        Zero for an expected ending or user stop; one for a fault.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("x") as log:
@@ -387,6 +374,9 @@ def run(
         0
         if robot is not None
         and robot.reason
-        in ("actions_exhausted", "task_success", "episode_limit")
+        in (
+            "actions_exhausted", "task_success", "episode_limit",
+            "manual_stop", "interrupted",
+        )
         else 1
     )

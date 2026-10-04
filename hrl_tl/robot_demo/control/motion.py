@@ -148,7 +148,8 @@ class MotionExecutor:
         if self._state in (State.STOPPED, State.FAULT) or self._pose is None:
             return Velocity()
         if now - self._pose.received_at > self._config.pose_timeout:
-            self.stop(now, "pose_timeout", fault=True)
+            self._finish(now, "stopped", "pose_timeout")
+            self._state = State.IDLE
             return Velocity()
         if self._target is None:
             return Velocity()
@@ -160,7 +161,8 @@ class MotionExecutor:
                 self._finish(now, "target_reached", "target_reached")
                 self._state = State.IDLE
             else:
-                self.stop(now, "motion_timeout", fault=True)
+                self._finish(now, "stopped", "motion_timeout")
+                self._state = State.IDLE
             return Velocity()
         if self._state == State.HOLDING:
             if distance > self._config.position_tolerance:

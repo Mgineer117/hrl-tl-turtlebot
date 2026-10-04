@@ -37,6 +37,7 @@ class LearnedPolicyProvider(policy.ActionProvider):
         log: TextIO,
         *,
         max_actions: int | None = None,
+        continuous: bool = False,
         require_arena: bool = True,
     ) -> None:
         if not layout.physical_walls and not require_arena:
@@ -45,7 +46,8 @@ class LearnedPolicyProvider(policy.ActionProvider):
             )
         self._layout: arena.Arena = layout
         self._controller: hierarchy.RobotHierarchy = hierarchy.RobotHierarchy(
-            layout, upper_model, wrapper_kwargs, log, max_actions
+            layout, upper_model, wrapper_kwargs, log, max_actions,
+            continuous=continuous,
         )
         self._require_arena: bool = require_arena
         self._stable_since: float | None = None
