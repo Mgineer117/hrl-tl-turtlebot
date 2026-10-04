@@ -59,6 +59,7 @@ class RobotNode(node.Node):
         provider: policy.ActionProvider,
         log: TextIO,
         *,
+        alignment: pose.FirstPoseAlignment | None = None,
         episode_recorder: recording.EpisodeRecorder | None = None,
         gazebo_image_topic: str | None = None,
     ) -> None:
@@ -66,6 +67,7 @@ class RobotNode(node.Node):
         self._config: config.DemoConfig = settings
         self._provider: policy.ActionProvider = provider
         self._log: TextIO = log
+        self._alignment = alignment
         self._recorder = episode_recorder
         self._runtime: runtime.DemoRuntime = runtime.DemoRuntime(
             settings, time.monotonic()
@@ -135,6 +137,18 @@ class RobotNode(node.Node):
             + "\n"
         )
         self._log.flush()
+        if alignment is not None and alignment.offset is not None:
+            self._log_alignment()
+
+    def _log_alignment(self) -> None:
+        assert self._alignment is not None
+        self._log.write(json.dumps({
+            "event": "mocap_alignment",
+            "first_corrected_pose": self._alignment.first_pose.model_dump(),
+            "target_start_world_m": self._alignment.start.model_dump(),
+            "fixed_translation_m": self._alignment.offset.model_dump(),
+        }, allow_nan=False) + "\n")
+        self._log.flush()
 
     @property
     def finished(self) -> bool:
@@ -181,6 +195,11 @@ class RobotNode(node.Node):
     def _on_pose(self, message: geometry.PoseStamped) -> None:
         try:
             measured = decode_pose(message, self._config.ros, time.monotonic())
+            if self._alignment is not None:
+                first = self._alignment.offset is None
+                measured = self._alignment.apply(measured)
+                if first:
+                    self._log_alignment()
             if self._runtime.update_pose(measured):
                 self._provider.receive_pose(measured)
         except ValueError as error:
@@ -307,6 +326,7 @@ def run(
     provider: policy.ActionProvider,
     log_path: pathlib.Path,
     *,
+    alignment: pose.FirstPoseAlignment | None = None,
     episode_recorder: recording.EpisodeRecorder | None = None,
     gazebo_image_topic: str | None = None,
 ) -> int:
@@ -336,6 +356,7 @@ def run(
                 settings,
                 provider,
                 log,
+                alignment=alignment,
                 episode_recorder=episode_recorder,
                 gazebo_image_topic=gazebo_image_topic,
             )

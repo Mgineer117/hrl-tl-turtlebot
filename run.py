@@ -62,7 +62,7 @@ def interpret_manual_action(
     )
 
 
-def preflight(robot_ip: str, layout) -> None:
+def preflight(robot_ip: str, layout, alignment: pose.FirstPoseAlignment | None = None) -> None:
     """Require a corrected live pose and a ROS command subscriber before motion."""
     try:
         with socket.create_connection((robot_ip, 22), timeout=2):
@@ -98,7 +98,14 @@ def preflight(robot_ip: str, layout) -> None:
             if (
                 pose_topic in topics
                 and "geometry_msgs/msg/PoseStamped" in topics[pose_topic]
-                and received
+                and len(received) >= 2
+                and (
+                    received[-1].header.stamp.sec,
+                    received[-1].header.stamp.nanosec,
+                ) > (
+                    received[-2].header.stamp.sec,
+                    received[-2].header.stamp.nanosec,
+                )
                 and expected in topics.get(cmd_topic, [])
                 and node.count_subscribers(cmd_topic) > 0
             ):
@@ -106,6 +113,8 @@ def preflight(robot_ip: str, layout) -> None:
                     corrected = decode_pose(received[-1], settings, time.monotonic())
                 except ValueError as error:
                     raise RuntimeError(f"Invalid mocap pose: {error}") from error
+                if alignment is not None:
+                    corrected = alignment.apply(corrected)
                 if not layout.robot.bounds.contains(
                     corrected.x, corrected.y, layout.robot.motion.wall_stop_margin
                 ):
@@ -121,6 +130,12 @@ def preflight(robot_ip: str, layout) -> None:
                     f"corrected world: ({corrected.x:.3f}, {corrected.y:.3f}) m; "
                     f"Zone: ({zone.x:.3f}, {zone.y:.3f})"
                 )
+                if alignment is not None:
+                    print(
+                        f"First-pose alignment: fixed translation "
+                        f"({alignment.offset.x:+.3f}, {alignment.offset.y:+.3f}) m "
+                        "from this first pose to the configured arena start"
+                    )
                 return
         pose_types = topics.get(pose_topic, [])
         cmd_types = topics.get(cmd_topic, [])
@@ -131,10 +146,12 @@ def preflight(robot_ip: str, layout) -> None:
             problems.append(
                 f"{pose_topic} type missing (observed {pose_types or 'no topic'})"
             )
-        elif not received:
+        elif len(received) < 2:
             problems.append(
-                f"no PoseStamped message arrived on {pose_topic} during the 10 s wait"
+                f"fewer than two PoseStamped messages arrived on {pose_topic} during the 10 s wait"
             )
+        elif received[-1].header.stamp == received[-2].header.stamp:
+            problems.append(f"{pose_topic} source timestamps did not advance")
         if expected not in cmd_types:
             problems.append(
                 f"{cmd_topic} type must be {expected} (observed {cmd_types or 'no topic'})"
@@ -186,6 +203,10 @@ def main() -> int:
     os.chdir(ROOT)  # Wrapper and formula paths are repo relative.
 
     layout = load(arena_path)
+    alignment = (
+        pose.FirstPoseAlignment(pose.zone_to_world(layout.start, layout.robot.frame))
+        if layout.robot.ros.align_first_pose_to_start else None
+    )
     manual_movement = None
     manual_metadata = None
     if args.mode == "move":
@@ -208,7 +229,7 @@ def main() -> int:
                 parser.error(f"Missing robot policy checkpoint: {ROOT / 'models' / filename}")
     if args.mode in ("preflight", "move", "run"):
         try:
-            preflight(args.robot_ip, layout)
+            preflight(args.robot_ip, layout, alignment)
         except RuntimeError as error:
             parser.error(str(error))
     if args.mode == "preflight":
@@ -235,7 +256,7 @@ def main() -> int:
         print(f"Run data: {log_dir}")
         from hrl_tl.robot_demo.control.ros_adapter import run as ros_run
 
-        return ros_run(layout.robot, provider, log_dir / "motion.jsonl")
+        return ros_run(layout.robot, provider, log_dir / "motion.jsonl", alignment=alignment)
 
     reader = TLMetaOptionWrapperConfigReader.model_validate(
         yaml.safe_load((ROOT / "configs/wrapper.yaml").read_text())
@@ -286,7 +307,7 @@ def main() -> int:
         try:
             print(f"Policy log: {log_dir / 'policy.jsonl'}")
             print(f"Motion log: {log_dir / 'motion.jsonl'}")
-            return run(layout.robot, provider, log_dir / "motion.jsonl")
+            return run(layout.robot, provider, log_dir / "motion.jsonl", alignment=alignment)
         finally:
             provider.close()
 

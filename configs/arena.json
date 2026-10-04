@@ -569,6 +569,7 @@
       "marker_offset_x_m": -0.01099,
       "marker_offset_y_m": -0.01356,
       "mocap_rotation_rad": 0.0,
+      "align_first_pose_to_start": true,
       "cmd_vel_topic": "/cmd_vel",
       "cmd_vel_type": "twist_stamped",
       "stop_topic": "/robot_demo/stop",
